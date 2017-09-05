@@ -385,7 +385,7 @@ class ProtoMessageConverter extends GroupConverter {
       if (parquetType.asGroupType().containsField("list")) {
         parquetSchema = parquetType.asGroupType().getType("list");
         if (parquetSchema.asGroupType().containsField("element")) {
-          parquetSchema.asGroupType().getType("element");
+          parquetSchema = parquetSchema.asGroupType().getType("element");
         }
       } else {
         throw new ParquetDecodingException("Expected list but got: " + parquetType);
@@ -398,10 +398,6 @@ class ProtoMessageConverter extends GroupConverter {
     public Converter getConverter(int fieldIndex) {
       if (fieldIndex > 0) {
         throw new ParquetDecodingException("Unexpected multiple fields in the LIST wrapper");
-      }
-
-      if (listOfMessage) {
-        return converter;
       }
 
       return new GroupConverter() {

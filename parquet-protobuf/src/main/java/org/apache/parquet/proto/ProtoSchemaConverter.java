@@ -1,4 +1,4 @@
-/* 
+/*
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -19,6 +19,7 @@
 package org.apache.parquet.proto;
 
 import com.google.protobuf.Descriptors;
+import com.google.protobuf.Descriptors.FieldDescriptor;
 import com.google.protobuf.Descriptors.FieldDescriptor.JavaType;
 import com.google.protobuf.Message;
 import com.twitter.elephantbird.util.Protobufs;
@@ -56,8 +57,8 @@ public class ProtoSchemaConverter {
   }
 
   /* Iterates over list of fields. **/
-  private <T> GroupBuilder<T> convertFields(GroupBuilder<T> groupBuilder, List<Descriptors.FieldDescriptor> fieldDescriptors) {
-    for (Descriptors.FieldDescriptor fieldDescriptor : fieldDescriptors) {
+  private <T> GroupBuilder<T> convertFields(GroupBuilder<T> groupBuilder, List<FieldDescriptor> fieldDescriptors) {
+    for (FieldDescriptor fieldDescriptor : fieldDescriptors) {
       groupBuilder =
           addField(fieldDescriptor, groupBuilder)
           .id(fieldDescriptor.getNumber())
@@ -66,7 +67,7 @@ public class ProtoSchemaConverter {
     return groupBuilder;
   }
 
-  private Type.Repetition getRepetition(Descriptors.FieldDescriptor descriptor) {
+  private Type.Repetition getRepetition(FieldDescriptor descriptor) {
     if (descriptor.isRequired()) {
       return Type.Repetition.REQUIRED;
     } else if (descriptor.isRepeated()) {
@@ -76,7 +77,7 @@ public class ProtoSchemaConverter {
     }
   }
 
-  private <T> Builder<? extends Builder<?, GroupBuilder<T>>, GroupBuilder<T>> addField(Descriptors.FieldDescriptor descriptor, final GroupBuilder<T> builder) {
+  private <T> Builder<? extends Builder<?, GroupBuilder<T>>, GroupBuilder<T>> addField(FieldDescriptor descriptor, final GroupBuilder<T> builder) {
     if (descriptor.getJavaType() == JavaType.MESSAGE) {
       return addMessageField(descriptor, builder);
     }
@@ -89,7 +90,7 @@ public class ProtoSchemaConverter {
     return builder.primitive(parquetType.primitiveType, getRepetition(descriptor)).as(parquetType.originalType);
   }
 
-  private <T> Builder<? extends Builder<?, GroupBuilder<T>>, GroupBuilder<T>> addRepeatedPrimitive(Descriptors.FieldDescriptor descriptor,
+  private <T> Builder<? extends Builder<?, GroupBuilder<T>>, GroupBuilder<T>> addRepeatedPrimitive(FieldDescriptor descriptor,
                                                                                                    PrimitiveTypeName primitiveType,
                                                                                                    OriginalType originalType,
                                                                                                    final GroupBuilder<T> builder) {
@@ -101,18 +102,19 @@ public class ProtoSchemaConverter {
         .named("list");
   }
 
-  private <T> GroupBuilder<GroupBuilder<T>> addRepeatedMessage(Descriptors.FieldDescriptor descriptor, GroupBuilder<T> builder) {
-    GroupBuilder<GroupBuilder<GroupBuilder<T>>> result =
+  private <T> GroupBuilder<GroupBuilder<T>> addRepeatedMessage(FieldDescriptor descriptor, GroupBuilder<T> builder) {
+    GroupBuilder<GroupBuilder<GroupBuilder<GroupBuilder<T>>>> result =
       builder
         .group(Type.Repetition.REQUIRED).as(OriginalType.LIST)
-        .group(Type.Repetition.REPEATED);
+        .group(Type.Repetition.REPEATED)
+        .group(Type.Repetition.OPTIONAL);
 
     convertFields(result, descriptor.getMessageType().getFields());
 
-    return result.named("list");
+    return result.named("element").named("list");
   }
 
-  private <T> GroupBuilder<GroupBuilder<T>> addMessageField(Descriptors.FieldDescriptor descriptor, final GroupBuilder<T> builder) {
+  private <T> GroupBuilder<GroupBuilder<T>> addMessageField(FieldDescriptor descriptor, final GroupBuilder<T> builder) {
     if (descriptor.isMapField()) {
       return addMapField(descriptor, builder);
     } else if (descriptor.isRepeated()) {
@@ -125,8 +127,8 @@ public class ProtoSchemaConverter {
     return group;
   }
 
-  private <T> GroupBuilder<GroupBuilder<T>> addMapField(Descriptors.FieldDescriptor descriptor, final GroupBuilder<T> builder) {
-    List<Descriptors.FieldDescriptor> fields = descriptor.getMessageType().getFields();
+  private <T> GroupBuilder<GroupBuilder<T>> addMapField(FieldDescriptor descriptor, final GroupBuilder<T> builder) {
+    List<FieldDescriptor> fields = descriptor.getMessageType().getFields();
     if (fields.size() != 2) {
       throw new UnsupportedOperationException("Expected two fields for the map (key/value), but got: " + fields);
     }
@@ -134,7 +136,7 @@ public class ProtoSchemaConverter {
     ParquetType mapKeyParquetType = getParquetType(fields.get(0));
 
     GroupBuilder<GroupBuilder<GroupBuilder<T>>> group = builder
-      .group(Type.Repetition.REQUIRED).as(OriginalType.MAP)
+      .group(Type.Repetition.OPTIONAL).as(OriginalType.MAP) // only optional maps are allowed in Proto3
       .group(Type.Repetition.REPEATED) // key_value wrapper
       .primitive(mapKeyParquetType.primitiveType, Type.Repetition.REQUIRED).as(mapKeyParquetType.originalType).named("key");
 
@@ -142,7 +144,7 @@ public class ProtoSchemaConverter {
       .named("key_value");
   }
 
-  private ParquetType getParquetType(Descriptors.FieldDescriptor fieldDescriptor) {
+  private ParquetType getParquetType(FieldDescriptor fieldDescriptor) {
 
     JavaType javaType = fieldDescriptor.getJavaType();
     switch (javaType) {
