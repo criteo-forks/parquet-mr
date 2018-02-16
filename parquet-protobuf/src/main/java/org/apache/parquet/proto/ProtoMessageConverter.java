@@ -364,25 +364,24 @@ class ProtoMessageConverter extends GroupConverter {
    * A LIST wrapper is created in parquet for the above mentioned protobuf schema:
    * message SimpleList {
    *   required group first_array (LIST) = 1 {
-   *     repeated int32 element;
+   *     repeated group list {
+   *       required int32 element;
+   *     }
    *   }
    * }
    * <p>
    * The LIST wrappers are used by 3rd party tools, such as Hive, to read parquet arrays. The wrapper contains
-   * one only one field: either a primitive field (like in the example above, where we have an array of ints) or
-   * another group (array of messages).
+   * two layers: the first is a repeated group, the second is the element of the list as optional. It is either
+   * a primitive field (as in the above example) or a group in case of protobuf messages.
    */
   final class ListConverter extends GroupConverter {
     private final Converter converter;
-    private final boolean listOfMessage;
 
     public ListConverter(Message.Builder parentBuilder, Descriptors.FieldDescriptor fieldDescriptor, Type parquetType) {
       OriginalType originalType = parquetType.getOriginalType();
       if (originalType != OriginalType.LIST) {
         throw new ParquetDecodingException("Expected LIST wrapper. Found: " + originalType + " instead.");
       }
-
-      listOfMessage = fieldDescriptor.getJavaType() == JavaType.MESSAGE;
 
       Type parquetSchema;
       if (parquetType.asGroupType().containsField("list")) {
