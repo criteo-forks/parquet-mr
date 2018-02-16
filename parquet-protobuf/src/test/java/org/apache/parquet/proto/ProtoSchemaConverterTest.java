@@ -122,7 +122,7 @@ public class ProtoSchemaConverterTest {
       "message TestProtobuf.SchemaConverterRepetition {\n" +
         "  optional int32 optionalPrimitive = 1;\n" +
         "  required int32 requiredPrimitive = 2;\n" +
-        "  required group repeatedPrimitive (LIST) = 3 {\n" +
+        "  optional group repeatedPrimitive (LIST) = 3 {\n" +
         "    repeated group list {\n" +
         "      required int32 element;\n" +
         "    }\n" +
@@ -133,7 +133,7 @@ public class ProtoSchemaConverterTest {
         "  required group requiredMessage = 8 {\n" +
         "    optional int32 someId= 3;\n" +
         "  }\n" +
-        "  required group repeatedMessage (LIST) = 9 {\n" +
+        "  optional group repeatedMessage (LIST) = 9 {\n" +
         "    repeated group list {\n" +
         "      optional group element {\n" +
         "        optional int32 someId = 3;\n" +
@@ -150,7 +150,7 @@ public class ProtoSchemaConverterTest {
     String expectedSchema =
       "message TestProto3.SchemaConverterRepetition {\n" +
         "  optional int32 optionalPrimitive = 1;\n" +
-        "  required group repeatedPrimitive (LIST) = 3 {\n" +
+        "  optional group repeatedPrimitive (LIST) = 3 {\n" +
         "    repeated group list {\n" +
         "      required int32 element;\n" +
         "    }\n" +
@@ -158,7 +158,7 @@ public class ProtoSchemaConverterTest {
         "  optional group optionalMessage = 7 {\n" +
         "    optional int32 someId = 3;\n" +
         "  }\n" +
-        "  required group repeatedMessage (LIST) = 9 {\n" +
+        "  optional group repeatedMessage (LIST) = 9 {\n" +
         "    repeated group list {\n" +
         "      optional group element {\n" +
         "        optional int32 someId = 3;\n" +

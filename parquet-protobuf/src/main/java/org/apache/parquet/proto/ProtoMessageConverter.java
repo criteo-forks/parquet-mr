@@ -363,7 +363,7 @@ class ProtoMessageConverter extends GroupConverter {
    * <p>
    * A LIST wrapper is created in parquet for the above mentioned protobuf schema:
    * message SimpleList {
-   *   required group first_array (LIST) = 1 {
+   *   optional group first_array (LIST) = 1 {
    *     repeated group list {
    *       required int32 element;
    *     }
