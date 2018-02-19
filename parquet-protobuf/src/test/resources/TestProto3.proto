@@ -137,3 +137,14 @@ message FirstCustomClassMessage {
 message SecondCustomClassMessage {
     string string = 11;
 }
+
+message MapMessage {
+    map<int32, string> innerMap = 1;
+}
+
+message OneofMessage {
+    oneof innerOneof {
+        string s = 1;
+        int32 i = 2;
+    }
+}

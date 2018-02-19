@@ -18,9 +18,14 @@
  */
 package org.apache.parquet.proto;
 
-import com.google.protobuf.*;
+import com.google.protobuf.ByteString;
+import com.google.protobuf.DescriptorProtos;
+import com.google.protobuf.Descriptors;
 import com.google.protobuf.Descriptors.Descriptor;
 import com.google.protobuf.Descriptors.FieldDescriptor;
+import com.google.protobuf.Message;
+import com.google.protobuf.MessageOrBuilder;
+import com.google.protobuf.TextFormat;
 import com.twitter.elephantbird.util.Protobufs;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.parquet.hadoop.BadConfigurationException;
@@ -28,16 +33,21 @@ import org.apache.parquet.hadoop.api.WriteSupport;
 import org.apache.parquet.io.InvalidRecordException;
 import org.apache.parquet.io.api.Binary;
 import org.apache.parquet.io.api.RecordConsumer;
-import org.apache.parquet.schema.*;
+import org.apache.parquet.schema.GroupType;
+import org.apache.parquet.schema.IncompatibleSchemaModificationException;
+import org.apache.parquet.schema.MessageType;
+import org.apache.parquet.schema.OriginalType;
 import org.apache.parquet.schema.Type;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.lang.reflect.Array;
 import java.util.Collection;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.TreeMap;
 
 /**
  * Implementation of {@link WriteSupport} for writing Protocol Buffers.
@@ -47,10 +57,15 @@ public class ProtoWriteSupport<T extends MessageOrBuilder> extends WriteSupport<
 
   private static final Logger LOG = LoggerFactory.getLogger(ProtoWriteSupport.class);
   public static final String PB_CLASS_WRITE = "parquet.proto.writeClass";
+  // if set to true, default value will be written to disk to ensure compatibility with other systems such as Hive,
+  // Presto, Spark... If false, default value won't be written, instead fields will be set to NULL to ensure
+  // backward compatibility.
+  public static final String PB_WRITE_DEFAULT_VALUES = "parquet.proto.writeDefaultValues";
 
   private RecordConsumer recordConsumer;
   private Class<? extends Message> protoMessage;
   private MessageWriter messageWriter;
+  private boolean writeDefaultValues = false;
 
   public ProtoWriteSupport() {
   }
@@ -111,12 +126,21 @@ public class ProtoWriteSupport<T extends MessageOrBuilder> extends WriteSupport<
 
     this.messageWriter = new MessageWriter(messageDescriptor, rootSchema);
 
+    // proto 3 only has optional field, and a field set to its default value is considered not set for proto3 and
+    // would be written as NULL on the parquet file. However this poses compatibility issues with other systems
+    // as they would have to be aware of this fact and convert NULL parquet values to the default protobuf value for
+    // the type. Thus is is often desirable to write the default values instead of NULL on disk for protobuf 3.
+    this.writeDefaultValues = isProto3(messageDescriptor) && configuration.getBoolean(PB_WRITE_DEFAULT_VALUES, writeDefaultValues);
+
     Map<String, String> extraMetaData = new HashMap<String, String>();
     extraMetaData.put(ProtoReadSupport.PB_CLASS, protoMessage.getName());
     extraMetaData.put(ProtoReadSupport.PB_DESCRIPTOR, serializeDescriptor(protoMessage));
     return new WriteContext(rootSchema, extraMetaData);
   }
 
+  private boolean isProto3(Descriptor messageDescriptor) {
+    return messageDescriptor.getFile().getSyntax() == Descriptors.FileDescriptor.Syntax.PROTO3;
+  }
 
   class FieldWriter {
     String fieldName;
@@ -147,11 +171,12 @@ public class ProtoWriteSupport<T extends MessageOrBuilder> extends WriteSupport<
   class MessageWriter extends FieldWriter {
 
     final FieldWriter[] fieldWriters;
+    private final Descriptors.FieldDescriptor[] fields;
 
     @SuppressWarnings("unchecked")
     MessageWriter(Descriptor descriptor, GroupType schema) {
-      List<FieldDescriptor> fields = descriptor.getFields();
-      fieldWriters = (FieldWriter[]) Array.newInstance(FieldWriter.class, fields.size());
+      this.fields = (Descriptors.FieldDescriptor[]) descriptor.getFields().toArray();
+      fieldWriters = (FieldWriter[]) Array.newInstance(FieldWriter.class, fields.length);
 
       for (FieldDescriptor fieldDescriptor: fields) {
         String name = fieldDescriptor.getName();
@@ -250,9 +275,10 @@ public class ProtoWriteSupport<T extends MessageOrBuilder> extends WriteSupport<
 
     private void writeAllFields(MessageOrBuilder pb) {
       //returns changed fields with values. Map is ordered by id.
-      Map<FieldDescriptor, Object> changedPbFields = pb.getAllFields();
+      Map<Descriptors.FieldDescriptor, Object> fields =
+        (writeDefaultValues) ? getAllFieldsIncludingDefault(pb) : getChangedFields(pb);
 
-      for (Map.Entry<FieldDescriptor, Object> entry : changedPbFields.entrySet()) {
+      for (Map.Entry<Descriptors.FieldDescriptor, Object> entry : fields.entrySet()) {
         FieldDescriptor fieldDescriptor = entry.getKey();
 
         if(fieldDescriptor.isExtension()) {
@@ -265,6 +291,43 @@ public class ProtoWriteSupport<T extends MessageOrBuilder> extends WriteSupport<
         fieldWriters[fieldIndex].writeField(entry.getValue());
       }
     }
+
+    private Map<Descriptors.FieldDescriptor, Object> getAllFieldsIncludingDefault(MessageOrBuilder pb) {
+      // we need a TreeMap to ensure that fields will be written in order, according to their index
+      Map<Descriptors.FieldDescriptor, Object> res = new TreeMap<>(FieldDescriptorComparator);
+      for (Descriptors.FieldDescriptor field: fields) {
+        // getField(myField) would return the default value on a MESSAGE type when we want a null value (as calling
+        // getMyField() on the protobuf message would return)
+        if (!field.isExtension() && !isEmptyOptionalMessage(pb, field) && !isUnsetOneof(pb, field)) {
+          res.put(field, pb.getField(field));
+        }
+      }
+      return res;
+    }
+
+    private boolean isEmptyOptionalMessage(MessageOrBuilder pb, Descriptors.FieldDescriptor fieldDescriptor) {
+      return fieldDescriptor.isOptional()
+        && fieldDescriptor.getType() == Descriptors.FieldDescriptor.Type.MESSAGE
+        && !pb.hasField(fieldDescriptor);
+    }
+
+    private boolean isUnsetOneof(MessageOrBuilder pb, Descriptors.FieldDescriptor fieldDescriptor) {
+      return fieldDescriptor.getContainingOneof() != null &&
+        !fieldDescriptor.equals(pb.getOneofFieldDescriptor(fieldDescriptor.getContainingOneof()));
+    }
+
+    private Map<Descriptors.FieldDescriptor, Object> getChangedFields(MessageOrBuilder pb) {
+      return pb.getAllFields();
+    }
+
+    // We can not use JAVA 8 lambda with method reference here as it makes the maven-shade plugin crash
+    // with an ArrayOutOfBound exception.
+    private Comparator<Descriptors.FieldDescriptor> FieldDescriptorComparator = new Comparator<FieldDescriptor>() {
+      @Override
+      public int compare(FieldDescriptor o1, FieldDescriptor o2) {
+        return o1.getIndex() - o2.getIndex();
+      }
+    };
   }
 
   class ArrayWriter extends FieldWriter {
@@ -285,27 +348,28 @@ public class ProtoWriteSupport<T extends MessageOrBuilder> extends WriteSupport<
       recordConsumer.startGroup();
       List<?> list = (List<?>) value;
 
-      recordConsumer.startField("list", 0); // This is the wrapper group for the array field
-      for (Object listEntry: list) {
-        recordConsumer.startGroup();
+      if (!list.isEmpty()) {
+        // skip inner array field if list is empty
+        recordConsumer.startField("list", 0); // This is the wrapper group for the array field
 
-        recordConsumer.startField("element", 0); // This is the mandatory inner field
-
-        if (!isPrimitive(listEntry)) {
+        for (Object listEntry: list) {
           recordConsumer.startGroup();
-        }
+          recordConsumer.startField("element", 0); // This is the mandatory inner field
 
-        fieldWriter.writeRawValue(listEntry);
+          if (!isPrimitive(listEntry)) {
+            recordConsumer.startGroup();
+            fieldWriter.writeRawValue(listEntry);
+            recordConsumer.endGroup();
+          }
+          else {
+            fieldWriter.writeRawValue(listEntry);
+          }
 
-        if (!isPrimitive(listEntry)) {
+          recordConsumer.endField("element", 0);
           recordConsumer.endGroup();
         }
-
-        recordConsumer.endField("element", 0);
-
-        recordConsumer.endGroup();
+        recordConsumer.endField("list", 0);
       }
-      recordConsumer.endField("list", 0);
 
       recordConsumer.endGroup();
       recordConsumer.endField(fieldName, index);
@@ -317,10 +381,10 @@ public class ProtoWriteSupport<T extends MessageOrBuilder> extends WriteSupport<
   }
 
   /** validates mapping between protobuffer fields and parquet fields.*/
-  private void validatedMapping(Descriptor descriptor, GroupType parquetSchema) {
-    List<FieldDescriptor> allFields = descriptor.getFields();
+  private void validatedMapping(Descriptors.Descriptor descriptor, GroupType parquetSchema) {
+    List<Descriptors.FieldDescriptor> allFields = descriptor.getFields();
 
-    for (FieldDescriptor fieldDescriptor: allFields) {
+    for (Descriptors.FieldDescriptor fieldDescriptor: allFields) {
       String fieldName = fieldDescriptor.getName();
       int fieldIndex = fieldDescriptor.getIndex();
       int parquetIndex = parquetSchema.getFieldIndex(fieldName);
@@ -370,21 +434,27 @@ public class ProtoWriteSupport<T extends MessageOrBuilder> extends WriteSupport<
     final void writeRawValue(Object value) {
       recordConsumer.startGroup();
 
-      recordConsumer.startField("key_value", 0); // This is the wrapper group for the map field
-      for (Message msg : (Collection<Message>) value) {
-        recordConsumer.startGroup();
+      Collection<Message> collection = (Collection<Message>) value;
 
-        final Descriptor descriptorForType = msg.getDescriptorForType();
-        final FieldDescriptor keyDesc = descriptorForType.findFieldByName("key");
-        final FieldDescriptor valueDesc = descriptorForType.findFieldByName("value");
+      if (!collection.isEmpty()) {
+        // skip inner field all together if map is empty
 
-        keyWriter.writeField(msg.getField(keyDesc));
-        valueWriter.writeField(msg.getField(valueDesc));
+        recordConsumer.startField("key_value", 0); // This is the wrapper group for the map field
+        for (Message msg : collection) {
+          recordConsumer.startGroup();
 
-        recordConsumer.endGroup();
+          final Descriptor descriptorForType = msg.getDescriptorForType();
+          final FieldDescriptor keyDesc = descriptorForType.findFieldByName("key");
+          final FieldDescriptor valueDesc = descriptorForType.findFieldByName("value");
+
+          keyWriter.writeField(msg.getField(keyDesc));
+          valueWriter.writeField(msg.getField(valueDesc));
+
+          recordConsumer.endGroup();
+        }
+
+        recordConsumer.endField("key_value", 0);
       }
-
-      recordConsumer.endField("key_value", 0);
 
       recordConsumer.endGroup();
     }
