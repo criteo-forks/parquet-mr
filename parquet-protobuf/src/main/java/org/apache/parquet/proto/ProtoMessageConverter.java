@@ -109,7 +109,7 @@ class ProtoMessageConverter extends GroupConverter {
     myBuilder.clear();
   }
 
-  private Converter newMessageConverter(final Message.Builder parentBuilder, final Descriptors.FieldDescriptor fieldDescriptor, Type parquetType) {
+  protected Converter newMessageConverter(final Message.Builder parentBuilder, final Descriptors.FieldDescriptor fieldDescriptor, Type parquetType) {
 
     boolean isRepeated = fieldDescriptor.isRepeated();
 
@@ -139,7 +139,7 @@ class ProtoMessageConverter extends GroupConverter {
     }
   }
 
-  private Converter newScalarConverter(ParentValueContainer pvc, Message.Builder parentBuilder, Descriptors.FieldDescriptor fieldDescriptor, Type parquetType) {
+  protected Converter newScalarConverter(ParentValueContainer pvc, Message.Builder parentBuilder, Descriptors.FieldDescriptor fieldDescriptor, Type parquetType) {
 
     JavaType javaType = fieldDescriptor.getJavaType();
 
@@ -175,7 +175,7 @@ class ProtoMessageConverter extends GroupConverter {
 
   }
 
-  final class ProtoEnumConverter extends PrimitiveConverter {
+  protected class ProtoEnumConverter extends PrimitiveConverter {
 
     private final Descriptors.FieldDescriptor fieldType;
     private final Map<Binary, Descriptors.EnumValueDescriptor> enumLookup;
@@ -432,7 +432,7 @@ class ProtoMessageConverter extends GroupConverter {
   }
 
 
-  final class MapConverter extends GroupConverter {
+  protected class MapConverter extends GroupConverter {
     private final Converter converter;
 
     public MapConverter(Message.Builder parentBuilder, Descriptors.FieldDescriptor fieldDescriptor, Type parquetType) {
