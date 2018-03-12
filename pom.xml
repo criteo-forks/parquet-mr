@@ -90,6 +90,7 @@
     <scala.maven.test.skip>false</scala.maven.test.skip>
     <pig.version>0.16.0</pig.version>
     <pig.classifier>h2</pig.classifier>
+    <thrift.version>0.9.1</thrift.version>
     <thrift-maven-plugin.version>0.10.0</thrift-maven-plugin.version>
     <thrift.version>0.9.1</thrift.version>
     <fastutil.version>7.0.13</fastutil.version>
