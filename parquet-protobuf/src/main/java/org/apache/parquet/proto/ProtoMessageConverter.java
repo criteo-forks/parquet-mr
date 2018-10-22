@@ -181,18 +181,19 @@ class ProtoMessageConverter extends GroupConverter {
     private final Map<Binary, Descriptors.EnumValueDescriptor> enumLookup;
     private Descriptors.EnumValueDescriptor[] dict;
     private final ParentValueContainer parent;
+    private final Descriptors.EnumDescriptor enumType;
 
     public ProtoEnumConverter(ParentValueContainer parent, Descriptors.FieldDescriptor fieldType) {
       this.parent = parent;
       this.fieldType = fieldType;
-      this.enumLookup = makeLookupStructure(fieldType);
+      this.enumType = fieldType.getEnumType();
+      this.enumLookup = makeLookupStructure(enumType);
     }
 
     /**
      * Fills lookup structure for translating between parquet enum values and Protocol buffer enum values.
      * */
-    private Map<Binary, Descriptors.EnumValueDescriptor> makeLookupStructure(Descriptors.FieldDescriptor enumFieldType) {
-      Descriptors.EnumDescriptor enumType = enumFieldType.getEnumType();
+    private Map<Binary, Descriptors.EnumValueDescriptor> makeLookupStructure(Descriptors.EnumDescriptor enumType) {
       Map<Binary, Descriptors.EnumValueDescriptor> lookupStructure = new HashMap<Binary, Descriptors.EnumValueDescriptor>();
 
       List<Descriptors.EnumValueDescriptor> enumValues = enumType.getValues();
@@ -213,11 +214,21 @@ class ProtoMessageConverter extends GroupConverter {
       Descriptors.EnumValueDescriptor protoValue = enumLookup.get(binaryValue);
 
       if (protoValue == null) {
-        Set<Binary> knownValues = enumLookup.keySet();
-        String msg = "Illegal enum value \"" + binaryValue + "\""
-                + " in protocol buffer \"" + fieldType.getFullName() + "\""
-                + " legal values are: \"" + knownValues + "\"";
-        throw new InvalidRecordException(msg);
+        // in case of unknown enum value, protobuf is creating new EnumValueDescriptor with the unknown number
+        // and name as following "UNKNOWN_ENUM_VALUE_" + parent.getName() + "_" + number
+        // so the idea is to parse the name
+        String s = new String(binaryValue.getBytes());
+
+        try {
+          int i = Integer.parseInt(s.substring(s.lastIndexOf("_") + 1));
+          Descriptors.EnumValueDescriptor unknownEnumValue = enumType.findValueByNumberCreatingIfUnknown(i);
+
+          // build new EnumValueDescriptor and put it in the value cache
+          enumLookup.put(binaryValue, unknownEnumValue);
+          return unknownEnumValue;
+        } catch (StringIndexOutOfBoundsException | NumberFormatException e) {
+          return enumType.findValueByNumberCreatingIfUnknown(-1);
+        }
       }
       return protoValue;
     }
