@@ -22,6 +22,8 @@ import com.google.protobuf.ByteString;
 import com.google.protobuf.Descriptors;
 import com.google.protobuf.Message;
 import com.twitter.elephantbird.util.Protobufs;
+import org.apache.commons.lang.StringUtils;
+import org.apache.hadoop.conf.Configuration;
 import org.apache.parquet.column.Dictionary;
 import org.apache.parquet.io.InvalidRecordException;
 import org.apache.parquet.io.ParquetDecodingException;
@@ -33,14 +35,13 @@ import org.apache.parquet.schema.GroupType;
 import org.apache.parquet.schema.IncompatibleSchemaModificationException;
 import org.apache.parquet.schema.LogicalTypeAnnotation;
 import org.apache.parquet.schema.Type;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.Optional;
-import java.util.Set;
+import java.util.*;
 
 import static com.google.protobuf.Descriptors.FieldDescriptor.JavaType;
+import static org.apache.parquet.proto.ProtoConstants.*;
 import static java.util.Optional.of;
 
 /**
@@ -48,24 +49,27 @@ import static java.util.Optional.of;
  * This is internal class, use {@link ProtoRecordConverter}.
  */
 class ProtoMessageConverter extends GroupConverter {
+  private static final Logger LOG = LoggerFactory.getLogger(ProtoMessageConverter.class);
 
+  private final Configuration conf;
   private final Converter[] converters;
   private final ParentValueContainer parent;
   private final Message.Builder myBuilder;
+  private final Map<String, String> extraMetadata;
 
   // used in record converter
-  ProtoMessageConverter(ParentValueContainer pvc, Class<? extends Message> protoClass, GroupType parquetSchema) {
-    this(pvc, Protobufs.getMessageBuilder(protoClass), parquetSchema);
+  ProtoMessageConverter(Configuration conf, ParentValueContainer pvc, Class<? extends Message> protoClass, GroupType parquetSchema, Map<String, String> extraMetadata) {
+    this(conf, pvc, Protobufs.getMessageBuilder(protoClass), parquetSchema, extraMetadata);
   }
 
-
   // For usage in message arrays
-  ProtoMessageConverter(ParentValueContainer pvc, Message.Builder builder, GroupType parquetSchema) {
+  ProtoMessageConverter(Configuration conf, ParentValueContainer pvc, Message.Builder builder, GroupType parquetSchema, Map<String, String> extraMetadata) {
 
     int schemaSize = parquetSchema.getFieldCount();
     converters = new Converter[schemaSize];
-
+    this.conf = conf;
     this.parent = pvc;
+    this.extraMetadata = extraMetadata;
     int parquetFieldIndex = 1;
 
     if (pvc == null) {
@@ -163,7 +167,7 @@ class ProtoMessageConverter extends GroupConverter {
       case LONG: return new ProtoLongConverter(pvc);
       case MESSAGE: {
         Message.Builder subBuilder = parentBuilder.newBuilderForField(fieldDescriptor);
-        return new ProtoMessageConverter(pvc, subBuilder, parquetType.asGroupType());
+        return new ProtoMessageConverter(conf, pvc, subBuilder, parquetType.asGroupType(), extraMetadata);
       }
     }
 
@@ -191,12 +195,16 @@ class ProtoMessageConverter extends GroupConverter {
     private Descriptors.EnumValueDescriptor[] dict;
     private final ParentValueContainer parent;
     private final Descriptors.EnumDescriptor enumType;
+    private final String unknownEnumPrefix;
+    private final boolean acceptUnknownEnum;
 
     public ProtoEnumConverter(ParentValueContainer parent, Descriptors.FieldDescriptor fieldType) {
       this.parent = parent;
       this.fieldType = fieldType;
       this.enumType = fieldType.getEnumType();
       this.enumLookup = makeLookupStructure(enumType);
+      unknownEnumPrefix = "UNKNOWN_ENUM_VALUE_" + enumType.getName() + "_";
+      acceptUnknownEnum = conf.getBoolean(CONFIG_ACCEPT_UNKNOWN_ENUM, false);
     }
 
     /**
@@ -205,11 +213,23 @@ class ProtoMessageConverter extends GroupConverter {
     private Map<Binary, Descriptors.EnumValueDescriptor> makeLookupStructure(Descriptors.EnumDescriptor enumType) {
       Map<Binary, Descriptors.EnumValueDescriptor> lookupStructure = new HashMap<Binary, Descriptors.EnumValueDescriptor>();
 
-      List<Descriptors.EnumValueDescriptor> enumValues = enumType.getValues();
+      if (extraMetadata.containsKey(METADATA_ENUM_PREFIX + enumType.getFullName())) {
+        String enumNameNumberPairs = extraMetadata.get(METADATA_ENUM_PREFIX + enumType.getFullName());
+        if (StringUtils.isBlank(enumNameNumberPairs)) {
+          LOG.info("No enum is written for " + enumType.getFullName());
+          return lookupStructure;
+        }
+        for (String enumItem : enumNameNumberPairs.split(METADATA_ENUM_ITEM_SEPARATOR)) {
+          String[] nameAndNumber = enumItem.split(METADATA_ENUM_KEY_VALUE_SEPARATOR);
+          lookupStructure.put(Binary.fromString(nameAndNumber[0]), enumType.findValueByNumberCreatingIfUnknown(Integer.parseInt(nameAndNumber[1])));
+        }
+      } else {
+        List<Descriptors.EnumValueDescriptor> enumValues = enumType.getValues();
 
-      for (Descriptors.EnumValueDescriptor value : enumValues) {
-        String name = value.getName();
-        lookupStructure.put(Binary.fromString(name), enumType.findValueByName(name));
+        for (Descriptors.EnumValueDescriptor value : enumValues) {
+          String name = value.getName();
+          lookupStructure.put(Binary.fromString(name), enumType.findValueByName(name));
+        }
       }
 
       return lookupStructure;
@@ -225,19 +245,35 @@ class ProtoMessageConverter extends GroupConverter {
       if (protoValue == null) {
         // in case of unknown enum value, protobuf is creating new EnumValueDescriptor with the unknown number
         // and name as following "UNKNOWN_ENUM_VALUE_" + parent.getName() + "_" + number
-        // so the idea is to parse the name
-        String s = new String(binaryValue.getBytes());
-
-        try {
-          int i = Integer.parseInt(s.substring(s.lastIndexOf("_") + 1));
-          Descriptors.EnumValueDescriptor unknownEnumValue = enumType.findValueByNumberCreatingIfUnknown(i);
-
-          // build new EnumValueDescriptor and put it in the value cache
-          enumLookup.put(binaryValue, unknownEnumValue);
-          return unknownEnumValue;
-        } catch (StringIndexOutOfBoundsException | NumberFormatException e) {
-          return enumType.findValueByNumberCreatingIfUnknown(-1);
+        // so the idea is to parse the name for data created by parquet-proto before this patch
+        String unknownLabel = new String(binaryValue.getBytes());
+        if (unknownLabel.startsWith(unknownEnumPrefix)) {
+          try {
+            int i = Integer.parseInt(unknownLabel.substring(unknownEnumPrefix.length()));
+            Descriptors.EnumValueDescriptor unknownEnumValue = enumType.findValueByNumberCreatingIfUnknown(i);
+            // build new EnumValueDescriptor and put it in the value cache
+            enumLookup.put(binaryValue, unknownEnumValue);
+            return unknownEnumValue;
+          } catch (NumberFormatException e) {
+            // The value does not respect "UNKNOWN_ENUM_VALUE_" + parent.getName() + "_" + number pattern
+            // We accept it as unknown enum with number -1.
+          }
         }
+        if (!acceptUnknownEnum) {
+          // Safe mode, when an enum does not have its number in metadata (data written before this fix), and its label
+          // is unrecognizable (neither defined in the schema, nor parsable with "UNKNOWN_ENUM_*" pattern, which means
+          // probably the reader schema is not up-to-date), we reject with an error.
+          Set<Binary> knownValues = enumLookup.keySet();
+          String msg = "Illegal enum value \"" + binaryValue + "\""
+            + " in protocol buffer \"" + fieldType.getFullName() + "\""
+            + " legal values are: \"" + knownValues + "\"";
+          throw new InvalidRecordException(msg);
+        }
+        LOG.error("Found unknown value " +  unknownLabel + " for field " + fieldType.getFullName() +
+          " probably because your proto schema is outdated, accept it as unknown enum with number -1");
+        Descriptors.EnumValueDescriptor unrecognized = enumType.findValueByNumberCreatingIfUnknown(-1);
+        enumLookup.put(binaryValue, unrecognized);
+        return unrecognized;
       }
       return protoValue;
     }
