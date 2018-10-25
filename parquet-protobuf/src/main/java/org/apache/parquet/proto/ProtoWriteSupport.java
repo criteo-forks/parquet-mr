@@ -1,4 +1,4 @@
-/* 
+/*
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -6,9 +6,9 @@
  * to you under the Apache License, Version 2.0 (the
  * "License"); you may not use this file except in compliance
  * with the License.  You may obtain a copy of the License at
- * 
+ *
  *   http://www.apache.org/licenses/LICENSE-2.0
- * 
+ *
  * Unless required by applicable law or agreed to in writing,
  * software distributed under the License is distributed on an
  * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
@@ -39,6 +39,10 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
+import static org.apache.parquet.proto.ProtoConstants.METADATA_ENUM_ITEM_SEPARATOR;
+import static org.apache.parquet.proto.ProtoConstants.METADATA_ENUM_KEY_VALUE_SEPARATOR;
+import static org.apache.parquet.proto.ProtoConstants.METADATA_ENUM_PREFIX;
+
 /**
  * Implementation of {@link WriteSupport} for writing Protocol Buffers.
  */
@@ -56,6 +60,9 @@ public class ProtoWriteSupport<T extends MessageOrBuilder> extends WriteSupport<
   private RecordConsumer recordConsumer;
   private Class<? extends Message> protoMessage;
   private MessageWriter messageWriter;
+  // Keep protobuf enum value with number in the metadata, so that in read time, a reader can read at least
+  // the number back even with an outdated schema which might not contain all enum values.
+  private Map<String, Map<String, Integer>> protoEnumBookKeeper = new HashMap<>();
 
   public ProtoWriteSupport() {
   }
@@ -127,13 +134,36 @@ public class ProtoWriteSupport<T extends MessageOrBuilder> extends WriteSupport<
 
     this.messageWriter = new MessageWriter(messageDescriptor, rootSchema);
 
-    Map<String, String> extraMetaData = new HashMap<String, String>();
+    Map<String, String> extraMetaData = new HashMap<>();
     extraMetaData.put(ProtoReadSupport.PB_CLASS, protoMessage.getName());
     extraMetaData.put(ProtoReadSupport.PB_DESCRIPTOR, serializeDescriptor(protoMessage));
     extraMetaData.put(PB_SPECS_COMPLIANT_WRITE, String.valueOf(writeSpecsCompliant));
     return new WriteContext(rootSchema, extraMetaData);
   }
 
+  @Override
+  public FinalizedWriteContext finalizeWrite() {
+    Map<String, String> protoMetadata = new HashMap<>();
+    for (Map.Entry<String, Map<String, Integer>> enumNameNumberMapping : protoEnumBookKeeper.entrySet()) {
+      StringBuilder nameNumberPairs = new StringBuilder();
+      if (enumNameNumberMapping.getValue().isEmpty()) {
+        // No enum is ever written to any column of this file, put an empty string as the value in the metadata
+        LOG.info("No enum is written for " + enumNameNumberMapping.getKey());
+      }
+      int idx = 0;
+      for (Map.Entry<String, Integer> nameNumberPair : enumNameNumberMapping.getValue().entrySet()) {
+        nameNumberPairs.append(nameNumberPair.getKey())
+          .append(METADATA_ENUM_KEY_VALUE_SEPARATOR)
+          .append(nameNumberPair.getValue());
+        idx ++;
+        if (idx < enumNameNumberMapping.getValue().size()) {
+          nameNumberPairs.append(METADATA_ENUM_ITEM_SEPARATOR);
+        }
+      }
+      protoMetadata.put(METADATA_ENUM_PREFIX + enumNameNumberMapping.getKey(), nameNumberPairs.toString());
+    }
+    return new FinalizedWriteContext(protoMetadata);
+  }
 
   class FieldWriter {
     String fieldName;
@@ -199,7 +229,7 @@ public class ProtoWriteSupport<T extends MessageOrBuilder> extends WriteSupport<
         case LONG: return new LongWriter();
         case FLOAT: return new FloatWriter();
         case DOUBLE: return new DoubleWriter();
-        case ENUM: return new EnumWriter();
+        case ENUM: return new EnumWriter(fieldDescriptor.getEnumType());
         case BOOLEAN: return new BooleanWriter();
         case BYTE_STRING: return new BinaryWriter();
       }
@@ -441,10 +471,23 @@ public class ProtoWriteSupport<T extends MessageOrBuilder> extends WriteSupport<
   }
 
   class EnumWriter extends FieldWriter {
+    Map<String, Integer> enumNameNumberPairs;
+
+    public EnumWriter(Descriptors.EnumDescriptor enumType) {
+      if (protoEnumBookKeeper.containsKey(enumType.getFullName())) {
+        enumNameNumberPairs = protoEnumBookKeeper.get(enumType.getFullName());
+      } else {
+        enumNameNumberPairs = new HashMap<>();
+        protoEnumBookKeeper.put(enumType.getFullName(), enumNameNumberPairs);
+      }
+    }
+
     @Override
     final void writeRawValue(Object value) {
-      Binary binary = Binary.fromString(((Descriptors.EnumValueDescriptor) value).getName());
+      Descriptors.EnumValueDescriptor enumValueDesc = (Descriptors.EnumValueDescriptor) value;
+      Binary binary = Binary.fromString(enumValueDesc.getName());
       recordConsumer.addBinary(binary);
+      enumNameNumberPairs.putIfAbsent(enumValueDesc.getName(), enumValueDesc.getNumber());
     }
   }
 
