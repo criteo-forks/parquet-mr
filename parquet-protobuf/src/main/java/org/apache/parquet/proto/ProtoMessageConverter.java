@@ -50,22 +50,22 @@ import static org.apache.parquet.proto.ProtoConstants.*;
  * @see {@link ProtoWriteSupport}
  * @author Lukas Nalezenec
  */
-class ProtoMessageConverter extends GroupConverter {
+public class ProtoMessageConverter extends GroupConverter {
   private static final Logger LOG = LoggerFactory.getLogger(ProtoMessageConverter.class);
 
-  private final Configuration conf;
-  private final Converter[] converters;
-  private final ParentValueContainer parent;
-  private final Message.Builder myBuilder;
-  private final Map<String, String> extraMetadata;
+  protected final Configuration conf;
+  protected final Converter[] converters;
+  protected final ParentValueContainer parent;
+  protected final Message.Builder myBuilder;
+  protected final Map<String, String> extraMetadata;
 
   // used in record converter
-  ProtoMessageConverter(Configuration conf, ParentValueContainer pvc, Class<? extends Message> protoClass, GroupType parquetSchema, Map<String, String> extraMetadata) {
+  public ProtoMessageConverter(Configuration conf, ParentValueContainer pvc, Class<? extends Message> protoClass, GroupType parquetSchema, Map<String, String> extraMetadata) {
     this(conf, pvc, Protobufs.getMessageBuilder(protoClass), parquetSchema, extraMetadata);
   }
 
   // For usage in message arrays
-  ProtoMessageConverter(Configuration conf, ParentValueContainer pvc, Message.Builder builder, GroupType parquetSchema, Map<String, String> extraMetadata) {
+  public ProtoMessageConverter(Configuration conf, ParentValueContainer pvc, Message.Builder builder, GroupType parquetSchema, Map<String, String> extraMetadata) {
 
     int schemaSize = parquetSchema.getFieldCount();
     converters = new Converter[schemaSize];
@@ -114,7 +114,7 @@ class ProtoMessageConverter extends GroupConverter {
     myBuilder.clear();
   }
 
-  private Converter newMessageConverter(final Message.Builder parentBuilder, final Descriptors.FieldDescriptor fieldDescriptor, Type parquetType) {
+  protected Converter newMessageConverter(final Message.Builder parentBuilder, final Descriptors.FieldDescriptor fieldDescriptor, Type parquetType) {
 
     boolean isRepeated = fieldDescriptor.isRepeated();
 
@@ -145,7 +145,7 @@ class ProtoMessageConverter extends GroupConverter {
     return newScalarConverter(parent, parentBuilder, fieldDescriptor, parquetType);
   }
 
-  private Converter newScalarConverter(ParentValueContainer pvc, Message.Builder parentBuilder, Descriptors.FieldDescriptor fieldDescriptor, Type parquetType) {
+  protected Converter newScalarConverter(ParentValueContainer pvc, Message.Builder parentBuilder, Descriptors.FieldDescriptor fieldDescriptor, Type parquetType) {
 
     JavaType javaType = fieldDescriptor.getJavaType();
 
