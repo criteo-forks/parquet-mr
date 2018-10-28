@@ -51,11 +51,11 @@ import static java.util.Optional.of;
 class ProtoMessageConverter extends GroupConverter {
   private static final Logger LOG = LoggerFactory.getLogger(ProtoMessageConverter.class);
 
-  private final Configuration conf;
-  private final Converter[] converters;
-  private final ParentValueContainer parent;
-  private final Message.Builder myBuilder;
-  private final Map<String, String> extraMetadata;
+  protected final Configuration conf;
+  protected final Converter[] converters;
+  protected final ParentValueContainer parent;
+  protected final Message.Builder myBuilder;
+  protected final Map<String, String> extraMetadata;
 
   // used in record converter
   ProtoMessageConverter(Configuration conf, ParentValueContainer pvc, Class<? extends Message> protoClass, GroupType parquetSchema, Map<String, String> extraMetadata) {
@@ -112,7 +112,7 @@ class ProtoMessageConverter extends GroupConverter {
     myBuilder.clear();
   }
 
-  private Converter newMessageConverter(final Message.Builder parentBuilder, final Descriptors.FieldDescriptor fieldDescriptor, Type parquetType) {
+  protected Converter newMessageConverter(final Message.Builder parentBuilder, final Descriptors.FieldDescriptor fieldDescriptor, Type parquetType) {
 
     boolean isRepeated = fieldDescriptor.isRepeated();
 
@@ -152,7 +152,7 @@ class ProtoMessageConverter extends GroupConverter {
     }).orElse(newScalarConverter(parent, parentBuilder, fieldDescriptor, parquetType));
   }
 
-  private Converter newScalarConverter(ParentValueContainer pvc, Message.Builder parentBuilder, Descriptors.FieldDescriptor fieldDescriptor, Type parquetType) {
+  protected Converter newScalarConverter(ParentValueContainer pvc, Message.Builder parentBuilder, Descriptors.FieldDescriptor fieldDescriptor, Type parquetType) {
 
     JavaType javaType = fieldDescriptor.getJavaType();
 
