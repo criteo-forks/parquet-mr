@@ -145,3 +145,17 @@ message FirstCustomClassMessage {
 message SecondCustomClassMessage {
     string string = 11;
 }
+
+// start - test backward compatibility when schema evolves
+message FirstVersionMessage {
+    repeated InnerMessage repeated_nested = 1;
+    InnerMessage optional_nested = 2;
+    repeated int32 repeated_int = 3;
+    int32 optional_int = 4;
+    string optional_string = 5;
+}
+
+message SecondVersionMessage {
+    string optional_string = 5;
+}
+// end - test backward compatibility when schema evolves

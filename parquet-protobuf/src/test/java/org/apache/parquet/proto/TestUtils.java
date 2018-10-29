@@ -1,4 +1,4 @@
-/* 
+/*
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -6,9 +6,9 @@
  * to you under the Apache License, Version 2.0 (the
  * "License"); you may not use this file except in compliance
  * with the License.  You may obtain a copy of the License at
- * 
+ *
  *   http://www.apache.org/licenses/LICENSE-2.0
- * 
+ *
  * Unless required by applicable law or agreed to in writing,
  * software distributed under the License is distributed on an
  * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
@@ -20,6 +20,7 @@ package org.apache.parquet.proto;
 
 import com.google.protobuf.Message;
 import com.google.protobuf.MessageOrBuilder;
+import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.Path;
 
 import java.io.File;
@@ -145,7 +146,11 @@ public class TestUtils {
    * Reads messages from given file. The file could/should be created by method writeMessages
    */
   public static <T extends MessageOrBuilder> List<T> readMessages(Path file) throws IOException {
-    ProtoParquetReader<T> reader = new ProtoParquetReader<T>(file);
+    return readMessages(file, new Configuration());
+  }
+
+  public static <T extends  MessageOrBuilder> List<T> readMessages(Path file, Configuration conf) throws IOException {
+    ProtoParquetReader<T> reader = new ProtoParquetReader<T>(conf, file);
 
     List<T> result = new ArrayList<T>();
     boolean hasNext = true;

@@ -39,6 +39,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.*;
+import java.util.stream.Collectors;
 
 import static com.google.protobuf.Descriptors.FieldDescriptor.JavaType;
 import static org.apache.parquet.proto.ProtoConstants.*;
@@ -86,13 +87,11 @@ public class ProtoMessageConverter extends GroupConverter {
       Descriptors.FieldDescriptor protoField = protoDescriptor.findFieldByName(parquetField.getName());
 
       if (protoField == null) {
-        String description = "Scheme mismatch \n\"" + parquetField + "\"" +
-                "\n proto descriptor:\n" + protoDescriptor.toProto();
-        throw new IncompatibleSchemaModificationException("Cant find \"" + parquetField.getName() + "\" " + description);
+        LOG.warn("Cannot find field " + parquetField.getName() + " in " + protoDescriptor.getFullName());
+        converters[parquetFieldIndex - 1] = parquetField.isPrimitive() ? NoopPrimitiveConverter.INSTANCE : new NoopGroupConverter(parquetField.asGroupType());
+      } else {
+        converters[parquetFieldIndex - 1] = newMessageConverter(myBuilder, protoField, parquetField);
       }
-
-      converters[parquetFieldIndex - 1] = newMessageConverter(myBuilder, protoField, parquetField);
-
       parquetFieldIndex++;
     }
   }
@@ -515,6 +514,71 @@ public class ProtoMessageConverter extends GroupConverter {
 
     @Override
     public void end() {
+    }
+  }
+
+  static class NoopPrimitiveConverter extends PrimitiveConverter {
+    static final NoopPrimitiveConverter INSTANCE = new NoopPrimitiveConverter();
+
+    @Override
+    public void addValueFromDictionary(int dictionaryId) {
+      // Do nothing
+    }
+
+    @Override
+    public void addBinary(Binary value) {
+      // Do nothing
+    }
+
+    @Override
+    public void addBoolean(boolean value) {
+      // Do nothing
+    }
+
+    @Override
+    public void addDouble(double value) {
+      // Do nothing
+    }
+
+    @Override
+    public void addFloat(float value) {
+      // Do nothing
+    }
+
+    @Override
+    public void addInt(int value) {
+      // Do nothing
+    }
+
+    @Override
+    public void addLong(long value) {
+      // Do nothing
+    }
+  }
+
+  static class NoopGroupConverter extends GroupConverter {
+    private final List<Converter> converters;
+
+    private NoopGroupConverter(GroupType descriptor) {
+      converters = new ArrayList<>(descriptor.getFieldCount());
+      for (Type field : descriptor.getFields()) {
+        converters.add(field.isPrimitive() ? NoopPrimitiveConverter.INSTANCE : new NoopGroupConverter(field.asGroupType()));
+      }
+    }
+
+    @Override
+    public Converter getConverter(int fieldIndex) {
+      return converters.get(fieldIndex);
+    }
+
+    @Override
+    public void start() {
+      // Do nothing
+    }
+
+    @Override
+    public void end() {
+      // Do nothing
     }
   }
 }

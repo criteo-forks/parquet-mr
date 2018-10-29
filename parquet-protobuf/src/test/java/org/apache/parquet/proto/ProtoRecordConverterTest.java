@@ -19,10 +19,17 @@
 package org.apache.parquet.proto;
 
 import com.google.protobuf.ByteString;
+import com.google.protobuf.MessageOrBuilder;
+import org.apache.hadoop.conf.Configuration;
+import org.apache.hadoop.fs.Path;
+import org.apache.parquet.hadoop.ParquetReader;
+import org.apache.parquet.hadoop.util.HadoopInputFile;
+import org.apache.parquet.io.InputFile;
 import org.junit.Test;
 import org.apache.parquet.proto.test.TestProto3;
 import org.apache.parquet.proto.test.TestProtobuf;
 
+import java.io.IOException;
 import java.util.List;
 
 import static org.junit.Assert.assertEquals;
@@ -358,5 +365,21 @@ public class ProtoRecordConverterTest {
     TestProto3.SchemaConverterAllDatatypes o = result.get(0);
 
     assertEquals(TestProto3.SchemaConverterAllDatatypes.TestEnum.UNRECOGNIZED, o.getOptionalEnum());
+  }
+
+  @Test
+  public void testReadAfterDroppingFields() throws IOException {
+    TestProto3.FirstVersionMessage data = TestProto3.FirstVersionMessage.newBuilder()
+      .addRepeatedNested(TestProto3.InnerMessage.newBuilder().setOne("one_field"))
+      .setOptionalNested(TestProto3.InnerMessage.newBuilder().setThree("optional nested"))
+      .addRepeatedInt(1)
+      .setOptionalInt(2)
+      .setOptionalString("optional string field")
+      .build();
+    Path file = TestUtils.writeMessages(data);
+    Configuration conf = new Configuration();
+    conf.set(ProtoReadSupport.PB_CLASS, TestProto3.SecondVersionMessage.class.getName());
+    List<TestProto3.SecondVersionMessageOrBuilder> result = TestUtils.readMessages(file, conf);
+    assertEquals(result.get(0).getOptionalString(), "optional string field");
   }
 }
