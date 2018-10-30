@@ -5,7 +5,7 @@ package org.apache.parquet.proto;
  */
 public final class ProtoConstants {
 
-  public static final String METADATA_ENUM_PREFIX = "proto.enum.";
+  public static final String METADATA_ENUM_PREFIX = "parquet.proto.enum.";
   public static final String METADATA_ENUM_KEY_VALUE_SEPARATOR = ":";
   public static final String METADATA_ENUM_ITEM_SEPARATOR = ",";
   /**
