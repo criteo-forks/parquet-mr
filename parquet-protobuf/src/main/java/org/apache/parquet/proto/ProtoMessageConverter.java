@@ -25,6 +25,7 @@ import com.twitter.elephantbird.util.Protobufs;
 import org.apache.commons.lang.StringUtils;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.parquet.column.Dictionary;
+import org.apache.parquet.hadoop.BadConfigurationException;
 import org.apache.parquet.io.InvalidRecordException;
 import org.apache.parquet.io.ParquetDecodingException;
 import org.apache.parquet.io.api.Binary;
@@ -221,6 +222,9 @@ class ProtoMessageConverter extends GroupConverter {
         }
         for (String enumItem : enumNameNumberPairs.split(METADATA_ENUM_ITEM_SEPARATOR)) {
           String[] nameAndNumber = enumItem.split(METADATA_ENUM_KEY_VALUE_SEPARATOR);
+          if (nameAndNumber.length != 2) {
+            throw new BadConfigurationException("Invalid enum bookkeeper from the metadata: " + enumNameNumberPairs);
+          }
           lookupStructure.put(Binary.fromString(nameAndNumber[0]), enumType.findValueByNumberCreatingIfUnknown(Integer.parseInt(nameAndNumber[1])));
         }
       } else {
