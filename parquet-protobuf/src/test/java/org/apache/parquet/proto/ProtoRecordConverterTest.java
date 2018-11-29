@@ -25,11 +25,9 @@ import org.apache.parquet.proto.test.TestProtobuf;
 
 import java.util.List;
 
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertTrue;
 import static org.apache.parquet.proto.TestUtils.testData;
 import static org.apache.parquet.proto.test.TestProtobuf.SchemaConverterAllDatatypes;
+import static org.junit.Assert.*;
 
 public class ProtoRecordConverterTest {
 
@@ -356,7 +354,7 @@ public class ProtoRecordConverterTest {
 
     //data are fully checked in testData function. Lets do one more check.
     TestProto3.SchemaConverterAllDatatypes o = result.get(0);
-
-    assertEquals(TestProto3.SchemaConverterAllDatatypes.TestEnum.UNRECOGNIZED, o.getOptionalEnum());
+    assertSame(o.getOptionalEnum(), TestProto3.SchemaConverterAllDatatypes.TestEnum.UNRECOGNIZED);
+    assertEquals(o.getOptionalEnumValue(), 42);
   }
 }
