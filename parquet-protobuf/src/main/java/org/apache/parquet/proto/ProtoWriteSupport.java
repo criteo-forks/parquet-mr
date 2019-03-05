@@ -38,6 +38,7 @@ import java.util.Collection;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.TreeMap;
 
 import static org.apache.parquet.proto.ProtoConstants.METADATA_ENUM_ITEM_SEPARATOR;
 import static org.apache.parquet.proto.ProtoConstants.METADATA_ENUM_KEY_VALUE_SEPARATOR;
@@ -146,10 +147,6 @@ public class ProtoWriteSupport<T extends MessageOrBuilder> extends WriteSupport<
     Map<String, String> protoMetadata = new HashMap<>();
     for (Map.Entry<String, Map<String, Integer>> enumNameNumberMapping : protoEnumBookKeeper.entrySet()) {
       StringBuilder nameNumberPairs = new StringBuilder();
-      if (enumNameNumberMapping.getValue().isEmpty()) {
-        // No enum is ever written to any column of this file, put an empty string as the value in the metadata
-        LOG.info("No enum is written for " + enumNameNumberMapping.getKey());
-      }
       int idx = 0;
       for (Map.Entry<String, Integer> nameNumberPair : enumNameNumberMapping.getValue().entrySet()) {
         nameNumberPairs.append(nameNumberPair.getKey())
@@ -474,12 +471,10 @@ public class ProtoWriteSupport<T extends MessageOrBuilder> extends WriteSupport<
     Map<String, Integer> enumNameNumberPairs;
 
     public EnumWriter(Descriptors.EnumDescriptor enumType) {
-      if (protoEnumBookKeeper.containsKey(enumType.getFullName())) {
-        enumNameNumberPairs = protoEnumBookKeeper.get(enumType.getFullName());
-      } else {
-        enumNameNumberPairs = new HashMap<>();
-        protoEnumBookKeeper.put(enumType.getFullName(), enumNameNumberPairs);
-      }
+      // use a tree map so that the extra-metadata string is sorted by name and can be used for comparisons
+      enumNameNumberPairs = protoEnumBookKeeper.computeIfAbsent(enumType.getFullName(), key -> new TreeMap<>());
+      // add all the known enum values to the name-number map
+      enumType.getValues().forEach(v -> enumNameNumberPairs.put(v.getName(), v.getNumber()));
     }
 
     @Override
