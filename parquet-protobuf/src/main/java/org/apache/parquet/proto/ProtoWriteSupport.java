@@ -38,6 +38,7 @@ import java.util.Collection;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.SortedMap;
 import java.util.TreeMap;
 
 import static org.apache.parquet.proto.ProtoConstants.METADATA_ENUM_ITEM_SEPARATOR;
@@ -63,7 +64,7 @@ public class ProtoWriteSupport<T extends MessageOrBuilder> extends WriteSupport<
   private MessageWriter messageWriter;
   // Keep protobuf enum value with number in the metadata, so that in read time, a reader can read at least
   // the number back even with an outdated schema which might not contain all enum values.
-  private Map<String, Map<String, Integer>> protoEnumBookKeeper = new HashMap<>();
+  private Map<String, SortedMap<String, Integer>> protoEnumBookKeeper = new HashMap<>();
 
   public ProtoWriteSupport() {
   }
@@ -145,7 +146,7 @@ public class ProtoWriteSupport<T extends MessageOrBuilder> extends WriteSupport<
   @Override
   public FinalizedWriteContext finalizeWrite() {
     Map<String, String> protoMetadata = new HashMap<>();
-    for (Map.Entry<String, Map<String, Integer>> enumNameNumberMapping : protoEnumBookKeeper.entrySet()) {
+    for (Map.Entry<String, SortedMap<String, Integer>> enumNameNumberMapping : protoEnumBookKeeper.entrySet()) {
       StringBuilder nameNumberPairs = new StringBuilder();
       int idx = 0;
       for (Map.Entry<String, Integer> nameNumberPair : enumNameNumberMapping.getValue().entrySet()) {
