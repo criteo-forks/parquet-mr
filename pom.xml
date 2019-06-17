@@ -123,7 +123,6 @@
     <module>parquet-pig</module>
     <module>parquet-pig-bundle</module>
     <module>parquet-protobuf</module>
-    <module>parquet-protobuf-bundle</module>
     <module>parquet-scala</module>
     <module>parquet-scrooge</module>
     <module>parquet-thrift</module>
@@ -131,7 +130,6 @@
     <module>parquet-hive</module>
     <module>parquet-hive-bundle</module>
     <module>parquet-tools</module>
-    <module>parquet-dist</module>
   </modules>
 
   <dependencies>
