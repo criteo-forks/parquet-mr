@@ -1,0 +1,31 @@
+<assembly xmlns="http://maven.apache.org/ASSEMBLY/2.0.0"
+          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+          xsi:schemaLocation="http://maven.apache.org/ASSEMBLY/2.0.0 http://maven.apache.org/xsd/assembly-2.0.0.xsd">
+  <id>bin</id>
+  <formats>
+    <format>tar.gz</format>
+  </formats>
+  <includeBaseDirectory>false</includeBaseDirectory>
+  <dependencySets>
+    <dependencySet>
+      <includes>
+        <include>org.apache.parquet:parquet-arrow</include>
+        <include>org.apache.parquet:parquet-avro</include>
+        <include>org.apache.parquet:parquet-cascading</include>
+        <include>org.apache.parquet:parquet-column</include>
+        <include>org.apache.parquet:parquet-common</include>
+        <include>org.apache.parquet:parquet-encoding</include>
+        <include>org.apache.parquet:parquet-generator</include>
+        <include>org.apache.parquet:parquet-hadoop</include>
+        <include>org.apache.parquet:parquet-hadoop-bundle</include>
+        <include>org.apache.parquet:parquet-jackson</include>
+        <include>org.apache.parquet:parquet-pig</include>
+        <include>org.apache.parquet:parquet-pig-bundle</include>
+        <include>org.apache.parquet:parquet-protobuf</include>
+        <include>org.apache.parquet:parquet-thrift</include>
+        <include>org.apache.parquet:parquet-tools</include>
+        <include>org.apache.parquet:parquet-format</include>
+      </includes>
+    </dependencySet>
+  </dependencySets>
+</assembly>

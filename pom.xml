@@ -130,6 +130,7 @@
     <module>parquet-hive</module>
     <module>parquet-hive-bundle</module>
     <module>parquet-tools</module>
+    <module>parquet-dist</module>
   </modules>
 
   <dependencies>
